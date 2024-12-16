@@ -15,7 +15,7 @@ from const import charging_system_states, charging_connection_states, door_state
     OAUTH_AUTH_URL, OAUTH_TOKEN_URL, VEHICLES_URL, VEHICLE_DETAILS_URL, RECHARGE_STATE_URL, CLIMATE_START_URL, \
     WINDOWS_STATE_URL, LOCK_STATE_URL, TYRE_STATE_URL, supported_entities, FUEL_BATTERY_STATE_URL, \
     STATISTICS_URL, ENGINE_DIAGNOSTICS_URL, VEHICLE_DIAGNOSTICS_URL, API_BACKEND_STATUS, WARNINGS_URL, engine_states, \
-    otp_max_loops
+    otp_max_loops, otp_interval
 
 session = requests.Session()
 session.headers = {
@@ -155,7 +155,7 @@ def send_otp(auth_session, data):
 
         logging.info("Waiting for otp code... Please check your mailbox and post your otp code to the following "
                      "mqtt topic \"volvoAAOS2mqtt/otp_code\". Retry " + str(i) + "/" + str(otp_max_loops))
-        time.sleep(5)
+        time.sleep(int(min(otp_interval, 60)))
 
     if not mqtt.otp_code:
         raise Exception ("No OTP found, exting...")
