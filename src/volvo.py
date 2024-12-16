@@ -15,7 +15,7 @@ from const import charging_system_states, charging_connection_states, door_state
     OAUTH_AUTH_URL, OAUTH_TOKEN_URL, VEHICLES_URL, VEHICLE_DETAILS_URL, RECHARGE_STATE_URL, CLIMATE_START_URL, \
     WINDOWS_STATE_URL, LOCK_STATE_URL, TYRE_STATE_URL, supported_entities, FUEL_BATTERY_STATE_URL, \
     STATISTICS_URL, ENGINE_DIAGNOSTICS_URL, VEHICLE_DIAGNOSTICS_URL, API_BACKEND_STATUS, WARNINGS_URL, engine_states, \
-    otp_max_loops
+    otp_max_loops, otp_interval
 
 session = requests.Session()
 session.headers = {
@@ -48,7 +48,7 @@ def authorize(renew_tokenfile=False):
             logging.warning("Detected corrupted token file, restarting auth process")
             authorize(True)
     else:
-        logging.info("Starting login with OTP")
+        logging.info("Starting login process")
         auth_session = requests.session()
         auth_session.headers = {
             "authorization": "Basic aDRZZjBiOlU4WWtTYlZsNnh3c2c1WVFxWmZyZ1ZtSWFEcGhPc3kxUENhVXNpY1F0bzNUUjVrd2FKc2U0QVpkZ2ZJZmNMeXc=",
@@ -74,22 +74,28 @@ def authorize(renew_tokenfile=False):
                 auth_state = response["status"]
 
                 if auth_state == "OTP_REQUIRED":
-                    response = send_otp(auth_session, response)
-                    response = continue_auth(auth_session, response)
-                    token_data = get_token(auth_session, response)
+                    logging.info("OTP authentication required. Press the 'Request OTP' button in Home Assistant to start the process.")
+                    # Create OTP entities - MQTT is already connected
+                    mqtt.create_otp_input()
+                    mqtt.set_auth_needed(True)
+                    # Exit here - let the user request OTP when ready
+                    raise Exception("OTP authentication required. Press the 'Request OTP' button in Home Assistant to start the process.")
                 else:
-                    raise Exception("Unkown auth state " + auth_state)
+                    raise Exception("Unknown auth state " + auth_state)
             elif auth_state == "OTP_REQUIRED":
-                response = send_otp(auth_session, response)
-                response = continue_auth(auth_session, response)
-                token_data = get_token(auth_session, response)
+                logging.info("OTP authentication required. Press the 'Request OTP' button in Home Assistant to start the process.")
+                # Create OTP entities - MQTT is already connected
+                mqtt.create_otp_input()
+                mqtt.set_auth_needed(True)
+                # Exit here - let the user request OTP when ready
+                raise Exception("OTP authentication required. Press the 'Request OTP' button in Home Assistant to start the process.")
             elif auth_state == "OTP_VERIFIED":
                 response = continue_auth(auth_session, response)
                 token_data = get_token(auth_session, response)
             elif auth_state == "COMPLETED":
                 token_data = get_token(auth_session, response)
             else:
-                raise Exception("Unkown auth state " + auth_state)
+                raise Exception("Unknown auth state " + auth_state)
 
             session.headers.update({"authorization": "Bearer " + token_data["access_token"]})
 
@@ -98,6 +104,7 @@ def authorize(renew_tokenfile=False):
             refresh_token = token_data["refresh_token"]
 
             util.save_to_json(token_data, token_path)
+            mqtt.set_auth_needed(False)  # Clear auth needed flag after successful authentication
         else:
             message = auth.json()
             raise Exception(message["details"][0]["userMessage"])
@@ -144,29 +151,25 @@ def check_username_password(auth_session, data):
 
 
 def send_otp(auth_session, data):
-    mqtt.create_otp_input()
     next_url = data["_links"]["checkOtp"]["href"] + "?action=checkOtp"
-    body = {"otp": ""}
-
-    for i in range(otp_max_loops):
-        if mqtt.otp_code:
-            body["otp"] = mqtt.otp_code
-            break
-
-        logging.info("Waiting for otp code... Please check your mailbox and post your otp code to the following "
-                     "mqtt topic \"volvoAAOS2mqtt/otp_code\". Retry " + str(i) + "/" + str(otp_max_loops))
-        time.sleep(5)
 
     if not mqtt.otp_code:
-        raise Exception ("No OTP found, exting...")
+        raise Exception("No OTP code available. Please enter the code from your email in Home Assistant.")
 
+    body = {"otp": mqtt.otp_code}
+    mqtt.otp_code = None  # Clear the used OTP code
+
+    # Try to verify OTP
     auth = auth_session.post(next_url, data=json.dumps(body))
-    mqtt.otp_code = None
+
     if auth.status_code == 200:
+        mqtt.request_otp = False  # Reset the flag after successful verification
         return auth.json()
     else:
         message = auth.json()
-        raise Exception(message["details"][0]["userMessage"])
+        error_msg = message["details"][0]["userMessage"]
+        logging.error("OTP verification failed: " + error_msg)
+        raise Exception("OTP verification failed: " + error_msg + ". Please check your email for a new code and enter it in Home Assistant.")
 
 
 def refresh_auth():

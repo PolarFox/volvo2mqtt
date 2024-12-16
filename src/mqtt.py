@@ -22,6 +22,7 @@ engine_status = {}
 devices = {}
 active_schedules = {}
 otp_code = None
+request_otp = False  # New flag to control OTP process
 
 def connect():
     client = mqtt.Client("volvoAAOS2mqtt") if os.environ.get("IS_HA_ADDON") \
@@ -38,7 +39,8 @@ def connect():
                 port = settings["mqtt"]["port"]
     client.connect(settings["mqtt"]["broker"], port)
     client.loop_start()
-    client.subscribe("volvoAAOS2mqtt/otp_code")
+    client.subscribe("homeassistant/text/volvoAAOS2mqtt/otp/command")
+    client.subscribe("homeassistant/button/volvoAAOS2mqtt/request_otp/command")
     client.on_message = on_message
     client.on_disconnect = on_disconnect
     client.on_connect = on_connect
@@ -48,22 +50,63 @@ def connect():
 
 
 def create_otp_input():
-    state_topic = otp_mqtt_topic + "/state"
+    state_topic = "homeassistant/text/volvoAAOS2mqtt/otp/state"
+    request_topic = "homeassistant/button/volvoAAOS2mqtt/request_otp/command"
+    auth_needed_topic = "homeassistant/binary_sensor/volvoAAOS2mqtt/auth_needed/state"
+    
+    # Create OTP input
     config = {
-        "name": "Volvo OTP",
-        "object_id": f"volvo_otp",
+        "name": "Volvo Account OTP",
+        "object_id": "volvo_account_otp",
         "schema": "state",
-        "command_topic": otp_mqtt_topic,
+        "command_topic": "homeassistant/text/volvoAAOS2mqtt/otp/command",
         "state_topic": state_topic,
-        "unique_id": "volvoAAOS2mqtt_otp",
+        "unique_id": "volvoAAOS2mqtt_account_otp",
         "pattern": r"\d{6}",
         "icon": "mdi:two-factor-authentication",
         "mode": "text"
     }
 
     mqtt_client.publish(
-        "homeassistant/text/volvoAAOS2mqtt/volvo_otp/config",
+        "homeassistant/text/volvoAAOS2mqtt/otp/config",
         json.dumps(config),
+        retain=True
+    )
+
+    # Create request OTP button
+    request_config = {
+        "name": "Request Account OTP",
+        "object_id": "volvo_account_request_otp",
+        "schema": "state",
+        "command_topic": request_topic,
+        "state_topic": "homeassistant/button/volvoAAOS2mqtt/request_otp/state",
+        "unique_id": "volvoAAOS2mqtt_account_request_otp",
+        "icon": "mdi:email-send",
+        "payload_press": "1",
+        "device_class": "button"
+    }
+
+    mqtt_client.publish(
+        "homeassistant/button/volvoAAOS2mqtt/request_otp/config",
+        json.dumps(request_config),
+        retain=True
+    )
+
+    # Create auth needed binary sensor
+    auth_needed_config = {
+        "name": "Volvo Account Authentication Required",
+        "object_id": "volvo_account_auth_needed",
+        "schema": "state",
+        "state_topic": auth_needed_topic,
+        "unique_id": "volvoAAOS2mqtt_account_auth_needed",
+        "device_class": "problem",
+        "payload_on": "ON",
+        "payload_off": "OFF"
+    }
+
+    mqtt_client.publish(
+        "homeassistant/binary_sensor/volvoAAOS2mqtt/auth_needed/config",
+        json.dumps(auth_needed_config),
         retain=True
     )
 
@@ -73,10 +116,28 @@ def create_otp_input():
         retain=True
     )
 
+    # Set initial state for auth needed sensor
+    mqtt_client.publish(
+        auth_needed_topic,
+        "OFF",
+        retain=True
+    )
+
+    # Subscribe to the command topics
+    mqtt_client.subscribe("homeassistant/text/volvoAAOS2mqtt/otp/command")
+    mqtt_client.subscribe(request_topic)
+
 def set_otp_state():
     mqtt_client.publish(
-        otp_mqtt_topic + "/state",
+        "homeassistant/text/volvoAAOS2mqtt/otp/state",
         otp_code,
+        retain=True
+    )
+
+def set_auth_needed(needed=True):
+    mqtt_client.publish(
+        "homeassistant/binary_sensor/volvoAAOS2mqtt/auth_needed/state",
+        "ON" if needed else "OFF",
         retain=True
     )
 
@@ -140,7 +201,8 @@ def on_disconnect(client, userdata, rc):
 
 def on_message(client, userdata, msg):
     payload = msg.payload.decode("UTF-8")
-    if msg.topic == otp_mqtt_topic:
+    
+    if "homeassistant/text/volvoAAOS2mqtt/otp/command" in msg.topic:
         if msg.retain == 0:
             global otp_code
             otp_code = payload
@@ -148,12 +210,25 @@ def on_message(client, userdata, msg):
         else:
             logging.warning("Found retained OTP, this can't work! Please clean retained messages!")
         return None
-    else:
-        try:
-            vin = msg.topic.split('/')[2].split('_')[0]
-        except IndexError:
-            logging.error("Error - Cannot get vin from MQTT topic!")
-            return None
+    elif "homeassistant/button/volvoAAOS2mqtt/request_otp/command" in msg.topic:
+        if msg.retain == 0 and payload == "1":
+            global request_otp
+            request_otp = True
+            try:
+                # Start a new thread for authorization to avoid blocking MQTT
+                Thread(target=volvo.authorize, args=(True,)).start()
+            except Exception as e:
+                logging.error("Failed to request OTP: " + str(e))
+                request_otp = False
+                set_auth_needed(False)
+        return None
+
+    # Extract VIN from topic for other commands
+    try:
+        vin = msg.topic.split('/')[2].split('_')[0]
+    except IndexError:
+        logging.error("Error - Cannot get vin from MQTT topic!")
+        return None
 
     if "climate_status" in msg.topic:
         if payload == "ON":

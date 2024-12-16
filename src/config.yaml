@@ -1,15 +1,15 @@
 name: "Volvo2Mqtt"
 description: "Volvo AAOS MQTT bridge"
-version: "1.10.5"
+version: "1.11.0"
 slug: "volvo2mqtt"
 init: false
-url: "https://github.com/Dielee/volvo2mqtt"
+url: "https://github.com/PolarFox/volvo2mqtt"
 apparmor: true
 codenotary: notary@home-assistant.io
 services:
-  - 'mqtt:need'
-map: 
-  - addons:rw
+- 'mqtt:need'
+map:
+- addons:rw
 options:
   updateInterval: 300
   babelLocale: null
@@ -26,7 +26,7 @@ options:
     password: null
     vin: ""
     vccapikey:
-        - null
+    - null
 schema:
   updateInterval: int(60,)
   babelLocale: str
@@ -43,10 +43,10 @@ schema:
     password: str
     vin: str?
     vccapikey:
-        - match(^\b\w{32}\b$)
+    - match(^\b\w{32}\b$)
 arch:
-  - aarch64
-  - amd64
-  - armhf
-  - armv7
-  - i386
+- aarch64
+- amd64
+- armhf
+- armv7
+- i386

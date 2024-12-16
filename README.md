@@ -79,47 +79,32 @@ NOTE: Energy status currently available only for cars in the Europe / Middle Eas
 
 ## OTP Authentication
 
-As of version <b>v1.9.0</b>, this addon uses the same OTP authentication as the Volvo app. 
-The following steps are required for authentication in exactly this order:
+As of version <b>v1.9.1</b>, this addon includes improvements to the OTP authentication flow, giving you better control through Home Assistant. 
+The authentication process works as follows:
 
 1. Setup volvo2Mqtt, either via Docker, or via HA addon (take a look at the "Setup" section below)
 2. Fill in your settings and start volvo2Mqtt
-3. Your log will show the following lines <br> 
-```Waiting for otp code... Please check your mailbox and post your otp code to the following mqtt topic "volvoAAOS2mqtt/otp_code". Retry 0/15```<br>
-```Waiting for otp code... Please check your mailbox and post your otp code to the following mqtt topic "volvoAAOS2mqtt/otp_code". Retry 1/15```<br>
-```etc ...```
-4. Now, open your mailbox and copy your OTP Code
-5. Open HomeAssistant and search for the entity ID ```text.volvo_otp```
-6. Paste your OTP into the text entity and **<ins>press Enter</ins>**<br>
-   6a. (optional) If your OTP cannot be safed, try to paste your OTP code via MQTT to the following topic: `volvoAAOS2mqtt/otp_code` <p>
-       <details>
-             <summary>OTP Post Script</summary>
-             <div>
-                <p>
-                1. Safe the following script in your script section <br>
-                2. Go to https://yourHAUrl/developer-tools/service<br>
-                3. Search for "Post Volvo OTP"<br>
-                4. Tick "OTP" and fill in your OTP<br>
-                5. Run this service<br>
-             </div>
-       
-            alias: Post Volvo OTP
-            sequence:
-              - service: mqtt.publish
-                metadata: {}
-                data:
-                  topic: volvoAAOS2mqtt/otp_code
-                  payload: "{{ otp }}"
-            mode: single
-            fields:
-              otp:
-                selector:
-                  text: null
-                name: OTP
-                description: Volvo OTP
-   
-   </details>
-8. If everything has worked, your addon is now authenticated. In the future, OTP authentication only needs to be done when updating, not when restarting the container.
+3. In Home Assistant, you'll find two entities:
+   - `text.volvo_otp`: For entering the OTP code
+   - `button.request_otp`: For requesting a new OTP when needed
+
+To authenticate:
+1. Press the "Request OTP" button in Home Assistant
+2. Check your email for the OTP code
+3. Enter the code in the `text.volvo_otp` entity and press Enter
+4. The system will verify your code
+
+If verification fails:
+1. Press the "Request OTP" button again to start a new authentication attempt
+2. Enter the new OTP code when received
+
+Recent improvements in v1.9.1:
+- Removed automatic retries for better control over the authentication process
+- Added "Request OTP" button for explicit OTP requests
+- Improved error handling and feedback
+- OTP codes are now cleared after each verification attempt
+
+Note: Authentication only needs to be done when updating or when explicitly requested, not when restarting the container.
 
 ## Setup
 <b>Docker:</b>

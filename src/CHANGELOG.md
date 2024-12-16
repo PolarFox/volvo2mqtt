@@ -1,3 +1,16 @@
+## v1.11.0
+### 📝 Notes:
+
+- All commits by PolarFox are assisted by Cursor.ai and Claude 3.5 Sonnet.
+
+### 🚀 Features:
+
+- Enhanced authentication flow with robust error handling and OTP support
+- Added authentication needed sensor for Home Assistant
+- Improved OTP handling and user control via Home Assistant
+- Standardized Home Assistant MQTT topics for OTP authentication
+- Updated MQTT topic subscriptions for Home Assistant discovery
+
 ## v1.10.5
 ### 🐛 Bug Fixes:
 
